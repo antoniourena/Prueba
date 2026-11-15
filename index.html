@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AUDERE | NASA Mars Trek & USGS EVA Navigator</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    :root { --bg:#090d16; --panel:#111827; --border:#1f2937; --text:#f3f4f6; --muted:#9ca3af; --cyan:#06b6d4; --green:#10b981; --amber:#f59e0b; --red:#ef4444; }
+    * { box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI',system-ui,sans-serif; }
+    body { background:var(--bg); color:var(--text); display:flex; flex-direction:column; height:100vh; overflow:hidden; }
+    header { background:var(--panel); border-bottom:1px solid var(--border); padding:8px 14px; display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; z-index:1000; }
+    .brand { display:flex; align-items:center; gap:8px; }
+    .badge { background:var(--cyan); color:#000; font-weight:800; padding:3px 8px; border-radius:4px; font-size:0.8rem; letter-spacing:1px; }
+    .brand h1 { font-size:0.96rem; font-weight:600; }
+    .pill { font-size:0.7rem; padding:2px 8px; border-radius:10px; background:#1f2937; color:var(--green); border:1px solid #374151; }
+    .controls { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+    select, button, label.btn { background:#1f2937; color:var(--text); border:1px solid #374151; padding:6px 9px; border-radius:6px; font-size:0.78rem; cursor:pointer; }
+    select:hover, button:hover, label.btn:hover { border-color:var(--cyan); }
+    .btn-go { background:#0284c7; border-color:#0369a1; font-weight:600; }
+    .btn-storm { background:#991b1b; border-color:#ef4444; font-weight:700; color:#fff; }
+    .btn-storm.active { background:#ef4444; box-shadow:0 0 12px rgba(239,68,68,0.65); }
+    main { display:grid; grid-template-columns:1fr 410px; flex:1; overflow:hidden; }
+    @media (max-width:960px) { main { grid-template-columns:1fr; overflow-y:auto; } #map { min-height:420px; } }
+    .map-wrap { position:relative; width:100%; height:100%; background:#140a07; }
+    #map { width:100%; height:100%; background:#1c0e0a; }
+    /* Estilo oscuro para el selector de capas de Leaflet (USGS + Clima) */
+    .leaflet-control-layers { background:rgba(17,24,39,0.95) !important; color:#f3f4f6 !important; border:1px solid #374151 !important; border-radius:8px !important; font-size:0.76rem; }
+    .leaflet-control-layers-separator { border-top:1px solid #374151 !important; }
+    #dustOverlay { pointer-events:none; position:absolute; inset:0; z-index:500; background:radial-gradient(circle,rgba(180,83,9,0.15),rgba(124,45,18,0.68)); opacity:0; transition:opacity 0.6s; }
+    .hud { position:absolute; top:12px; right:12px; z-index:600; background:rgba(17,24,39,0.93); border:1px solid #374151; border-radius:8px; padding:10px 12px; font-size:0.75rem; max-width:255px; }
+    .hud h3 { font-size:0.71rem; text-transform:uppercase; color:var(--cyan); margin-bottom:5px; }
+    .hud p { color:#d1d5db; line-height:1.35; margin-bottom:6px; }
+    .leg { display:flex; align-items:center; gap:6px; margin-top:4px; }
+    .dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
+    .sq { width:10px; height:10px; border-radius:2px; display:inline-block; }
+    aside { background:var(--panel); border-left:1px solid var(--border); padding:12px; overflow-y:auto; display:flex; flex-direction:column; gap:10px; }
+    .card { background:#161f32; border:1px solid #263147; border-radius:8px; padding:10px; }
+    .card h2 { font-size:0.75rem; text-transform:uppercase; letter-spacing:0.8px; color:var(--cyan); margin-bottom:7px; display:flex; justify-content:space-between; }
+    .alert { padding:8px; border-radius:6px; font-size:0.78rem; line-height:1.38; border-left:4px solid var(--green); background:rgba(16,185,129,0.12); }
+    .alert.warn { border-left-color:var(--amber); background:rgba(245,158,11,0.15); }
+    .alert.danger { border-left-color:var(--red); background:rgba(239,68,68,0.2); }
+    table { width:100%; border-collapse:collapse; font-size:0.76rem; text-align:left; }
+    th { color:var(--muted); padding-bottom:4px; border-bottom:1px solid #263147; }
+    td { padding:5px 2px; border-bottom:1px solid #1f2937; }
+    .good { color:var(--green); font-weight:700; }
+    .bad { color:var(--red); font-weight:700; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+    .metric { background:#0f1624; padding:6px 8px; border-radius:6px; border:1px solid #1f2937; }
+    .metric span { display:block; font-size:0.68rem; color:var(--muted); }
+    .metric strong { font-size:0.86rem; }
+    .bar-wrap { margin-top:7px; }
+    .bar-lbl { display:flex; justify-content:space-between; font-size:0.74rem; margin-bottom:2px; }
+    .bar-bg { width:100%; height:7px; background:#090d16; border-radius:4px; overflow:hidden; }
+    .bar-fill { height:100%; transition:width 0.25s,background 0.25s; }
+    .meta { font-size:0.77rem; color:#d1d5db; line-height:1.38; }
+    .meta p { margin-bottom:4px; }
+    .tag { display:inline-block; background:#1f2937; color:var(--cyan); padding:2px 6px; border-radius:4px; font-size:0.68rem; margin-top:3px; }
+  </style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="badge">AUDERE</span>
+    <h1>NASA Mars Trek &amp; USGS EVA Navigator</h1>
+    <span id="csvStatus" class="pill">Conectando...</span>
+  </div>
+  <div class="controls">
+    <select id="missionSelect" onchange="selectMission()">
+      <option value="gale">1. Cráter Gale — Boxwork (Monte Sharp)</option>
+      <option value="jezero">2. Cráter Jezero — Delta Neretva</option>
+      <option value="pavonis">3. Pavonis Mons — Tubo de Lava</option>
+      <option value="arcadia">4. Arcadia Planitia — Hielo</option>
+    </select>
+    <select id="csvScenarioSelect" onchange="applyCsvScenario()"></select>
+    <label class="btn">📁 Capa Local<input type="file" accept="image/*" style="display:none" onchange="overlayLocalImage(event)" /></label>
+    <button class="btn-go" onclick="toggleWalk()" id="walkBtn">▶ Caminar</button>
+    <button class="btn-storm" onclick="toggleStormQuick()" id="stormBtn">⚡ Tormenta (τ &gt; 2.5)</button>
+  </div>
+</header>
+<main>
+  <div class="map-wrap">
+    <div id="map"></div>
+    <div id="dustOverlay"></div>
+    <div class="hud">
+      <h3>Capas y Rutas (R = 3,389.5 km)</h3>
+      <p>Usa el menú superior izquierdo para cambiar entre mapas <strong>NASA/USGS</strong> y activar la <strong>Capa Meteorológica</strong>.</p>
+      <label class="leg" style="cursor:pointer;"><input type="checkbox" id="chkHazards" checked onchange="recalc()"> Mostrar celdas de riesgo</label>
+      <div class="leg"><span class="sq" style="background:#991b1b"></span> Pendiente &gt;15° (Bloqueada)</div>
+      <div class="leg"><span class="sq" style="background:#d97706"></span> Arena suelta (1.8x O₂)</div>
+      <div class="leg"><span class="dot" style="background:#0284c7"></span> Hábitat (H) | <span class="dot" style="background:#10b981"></span> Obj | <span class="dot" style="background:#8b5cf6"></span> Ref</div>
+      <div class="leg"><span style="color:#ef4444;font-weight:bold;">---</span> Ruta Lineal (Solo distancia)</div>
+      <div class="leg"><span style="color:#10b981;font-weight:bold;">━━</span> Ruta A* No Lineal (Evita riesgos)</div>
+    </div>
+  </div>
+  <aside>
+    <div class="card">
+      <h2>Copiloto Táctico <span id="alertBadge" style="color:#10b981">● NOMINAL</span></h2>
+      <div id="copilotMsg" class="alert">Ruta no lineal A* calculada esquivando pendientes &gt;15° y zonas de baja inercia térmica.</div>
+    </div>
+    <div class="card">
+      <h2>Comparativa: Lineal vs. Ruta A*</h2>
+      <table>
+        <thead><tr><th>Métrica Física</th><th>Lineal (Directa)</th><th>No Lineal (A*)</th></tr></thead>
+        <tbody>
+          <tr><td>Distancia real (Marte)</td><td id="cmpDistDir">0 m</td><td id="cmpDistSafe" class="good">0 m</td></tr>
+          <tr><td>Tiempo (3.0 km/h)</td><td id="cmpTimeDir">0 min</td><td id="cmpTimeSafe">0 min</td></tr>
+          <tr><td>Consumo Oxígeno (O₂)</td><td id="cmpO2Dir" class="bad">0 g</td><td id="cmpO2Safe" class="good">0 g</td></tr>
+          <tr><td>Obstáculos cruzados</td><td id="cmpRiskDir" class="bad">0</td><td id="cmpRiskSafe" class="good">0 (Libre)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2>Telemetría y Soporte Vital</h2>
+      <div class="grid">
+        <div class="metric"><span>Opacidad Polvo (τ)</span><strong id="valTau">0.55</strong></div>
+        <div class="metric"><span>Visibilidad Horiz.</span><strong id="valVis">18,000 m</strong></div>
+        <div class="metric"><span>Temp / Viento Ladera</span><strong id="valTemp">-8.0 °C | 11.0 m/s</strong></div>
+        <div class="metric"><span>Dosis Rad. (Blindaje <span id="valShield">65%</span>)</span><strong id="valRadAccum">0.0000 mSv</strong></div>
+      </div>
+      <div class="bar-wrap">
+        <div class="bar-lbl"><span>Tanque Oxígeno (O₂ xEMU)</span><strong id="valO2">540.0 g / 540 g (100%)</strong></div>
+        <div class="bar-bg"><div id="barO2" class="bar-fill" style="width:100%;background:#10b981;"></div></div>
+      </div>
+      <div class="bar-wrap">
+        <div class="bar-lbl"><span>Batería Térmica Traje</span><strong id="valBat">1000 Wh / 1000 Wh (100%)</strong></div>
+        <div class="bar-bg"><div id="barBat" class="bar-fill" style="width:100%;background:#06b6d4;"></div></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Ficha Científica y Capas Activas</h2>
+      <div class="meta" id="missionInfo"></div>
+    </div>
+  </aside>
+</main>
+<script>
+  const MARS_R = 3389500.0, SPEED_MPM = 50.0, MAX_O2 = 540.0, MAX_BAT = 1000.0, GRID_N = 28;
+  const MISSIONS = {
+    gale: { name:"Cráter Gale — Boxwork", coords:"5.40° S, 137.80° E | Elev: -4.5 km", obj:"Muestreo de sulfatos en crestas Boxwork para rastrear agua subterránea.", why:"Crestas >15° inaccesibles para rovers.", src:"MSL Curiosity + USGS MOLA + THEMIS", rad:0.64, shield:65, seed:14, hab:[-5.415,137.785], tgt:[-5.390,137.812], shl:[-5.408,137.792], stm:[-5.402,137.800], defCsv:"GALE_NOMINAL", stmCsv:"GALE_TORMENTA_GLOBAL" },
+    jezero: { name:"Cráter Jezero — Delta Neretva", coords:"18.38° N, 77.58° E | Elev: -2.5 km", obj:"Extracción de núcleos de arcilla esmectita con biofirmas preservadas.", why:"Selección rápida de estratos finos.", src:"Mars 2020 MEDA + USGS Astrogeology", rad:0.65, shield:55, seed:29, hab:[18.372,77.565], tgt:[18.394,77.595], shl:[18.377,77.582], stm:[18.383,77.580], defCsv:"JEZERO_NOMINAL", stmCsv:"JEZERO_DUST_DEVIL" },
+    pavonis: { name:"Pavonis Mons — Tubo de Lava", coords:"0.80° N, 113.00° W | Elev: +8.5 km", obj:"Inspección de cavidad volcánica como refugio natural contra radiación.", why:"Terreno volcánico abrupto imposible para ruedas.", src:"MRO HiRISE + USGS THEMIS Thermal", rad:0.82, shield:92, seed:43, hab:[0.790,-113.015], tgt:[0.814,-112.985], shl:[0.797,-112.996], stm:[0.802,-113.000], defCsv:"PAVONIS_VIENTO_LADERA", stmCsv:"GALE_TORMENTA_REGIONAL" },
+    arcadia: { name:"Arcadia Planitia — Hielo", coords:"39.20° N, 171.00° W | Elev: -3.8 km", obj:"Perforación somera (<1 m) para validar pureza de hielo ISRU.", why:"Operación directa de taladro portátil.", src:"MRO SHARAD/MCS + USGS MOLA", rad:0.62, shield:50, seed:61, hab:[39.188,-171.018], tgt:[39.214,-170.985], shl:[39.195,-171.000], stm:[39.201,-171.001], defCsv:"ARCADIA_NIEBLA_MATUTINA", stmCsv:"GALE_TORMENTA_REGIONAL" }
+  };
+  const FALLBACK_CSV = `escenario_id,mision_nasa,instrumento,ubicacion,elevacion_km,longitud_solar_ls,ventana_riesgo_lmst,temp_max_c,temp_min_c,presion_pa,opacidad_tau,visibilidad_m,viento_max_ms,viento_ladera_ms,riesgo_electrostatico,estado_alerta
+GALE_NOMINAL,MSL_Curiosity,REMS_Mastcam,Crater_Gale_Mount_Sharp,-4.5,75_Despejado,12:00-14:30,-8.0,-74.0,745,0.55,18000,8.5,11.0,BAJO,VERDE
+JEZERO_NOMINAL,Mars2020_Perseverance,MEDA,Crater_Jezero_Delta,-2.5,90_Despejado,11:30-15:00,-14.0,-79.0,715,0.48,20000,9.2,7.5,BAJO,VERDE
+ARCADIA_NIEBLA_MATUTINA,MRO_Phoenix_Ref,MCS_MARCI,Arcadia_Planitia_Hielo,-3.8,1
